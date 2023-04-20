@@ -55,9 +55,6 @@ where
     C: AcmeCache,
     F: Fn(String, CertifiedKey) -> Result<(), AcmeError>,
 {
-    let directory = Directory::discover(directory_url).await?;
-    let account = Account::load_or_create(directory, cache, contact).await?;
-
     if let Some(dir) = cache {
         if let Some((key_pem, cert_pem)) = dir
             .read_certificate(domains, directory_url)
@@ -82,6 +79,10 @@ where
             }
         }
     }
+
+    let directory = Directory::discover(directory_url).await?;
+    let account = Account::load_or_create(directory, cache, contact).await?;
+
     let (c, key_pem, cert_pem) = drive_order(set_auth_key, domains.to_vec(), account).await?;
 
     if let Some(dir) = cache {
