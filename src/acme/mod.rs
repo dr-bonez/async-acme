@@ -69,10 +69,14 @@ pub enum Order {
         certificate: String,
     },
     Invalid,
+    Processing {
+        authorizations: Vec<String>,
+        finalize: String,
+    },
 }
 
 ///Authentication status for a particular challange
-/// 
+///
 /// Can be obtained by [`Account::check_auth`](./struct.Account.html#method.check_auth)
 /// and is driven by triggering and completing challanges
 #[derive(Debug, Deserialize)]

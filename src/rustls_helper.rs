@@ -75,6 +75,7 @@ where
                 .map_err(AcmeError::cache)?,
             );
             if duration_until_renewal_attempt(Some(&c), 0) > Duration::ZERO {
+                log::info!("Cached cert found");
                 return Ok(c);
             }
         }
@@ -123,6 +124,7 @@ where
                 log::info!("completed all authorizations");
                 Order::Ready { finalize }
             }
+            Order::Processing { finalize, .. } => account.check_status(finalize).await?,
             Order::Ready { finalize } => {
                 log::info!("sending csr");
                 let csr = cert.get_csr()?;
@@ -141,7 +143,7 @@ where
                 })?;
                 return Ok((cert_key, pkey_pem, acme_cert_pem));
             }
-            Order::Invalid => return Err(OrderError::BadOrder(order)),
+            Order::Invalid => return Err(OrderError::BadOrder(Order::Invalid)),
         }
     }
 }

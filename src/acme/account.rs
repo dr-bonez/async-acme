@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use base64::URL_SAFE_NO_PAD;
 
 use serde_json::json;
@@ -11,7 +13,7 @@ use crate::{
 use generic_async_http_client::Response;
 
 /// An Acout at an ACME provider. Used to query certificates and challanges
-/// 
+///
 /// 1. `load_or_create` your Account
 /// 2. place a `new_order` for your domains
 /// 3. `check_auth` for a single domain, if valid move to 6.
@@ -99,21 +101,31 @@ impl Account {
     }
     /// send a JOSE request using the own Key to sign it
     async fn request(&self, url: impl AsRef<str>, payload: &str) -> Result<Response, AcmeError> {
-        jose_req(
+        let res = jose_req(
             &self.key_pair,
             Some(&self.kid),
             &self.directory.nonce().await?,
             url.as_ref(),
             payload,
         )
-        .await
+        .await?;
+        if let Some(retry) = res
+            .header("retry-after")
+            .and_then(|h| std::str::from_utf8(h.as_ref()).ok())
+            .and_then(|s| s.parse().ok())
+        {
+            log::info!("Received Retry-After header, waiting {retry} seconds...");
+            tokio::time::sleep(Duration::from_secs(retry)).await;
+        }
+        Ok(res)
     }
     /// send a new order for the DNS identifiers in domains
     pub async fn new_order(&self, domains: Vec<String>) -> Result<Order, AcmeError> {
         let domains: Vec<Identifier> = domains.into_iter().map(Identifier::Dns).collect();
         let payload = format!("{{\"identifiers\":{}}}", serde_json::to_string(&domains)?);
         let mut response = self.request(&self.directory.new_order, &payload).await?;
-        Ok(response.json().await?)
+        let order = serde_json::from_str(dbg!(&response.text().await?))?;
+        Ok(order)
     }
     /// check the authentication status for a particular challange
     pub async fn check_auth(&self, url: impl AsRef<str>) -> Result<Auth, AcmeError> {
@@ -126,14 +138,29 @@ impl Account {
         self.request(&url, "{}").await?;
         Ok(())
     }
+
+    pub async fn check_status(&self, url: impl AsRef<str>) -> Result<Order, AcmeError> {
+        loop {
+            let mut response: Response = self
+                .request(&url.as_ref().replace("/finalize/", "/order/"), "")
+                .await?;
+            let order = serde_json::from_str(&response.text().await?)?;
+            if matches!(order, Order::Processing { .. }) {
+                continue;
+            }
+            return Ok(order);
+        }
+    }
+
     /// request a certificate to be signed
     pub async fn send_csr(&self, url: impl AsRef<str>, csr: Vec<u8>) -> Result<Order, AcmeError> {
         let payload = format!(
             "{{\"csr\":\"{}\"}}",
-            base64::encode_config(csr, URL_SAFE_NO_PAD)
+            base64::encode_config(&csr, URL_SAFE_NO_PAD)
         );
-        let mut response = self.request(&url, &payload).await?;
-        Ok(response.json().await?)
+        let mut response: Response = self.request(&url, &payload).await?;
+        let order = serde_json::from_str(&dbg!(response.text().await?))?;
+        Ok(order)
     }
     /// obtain a signed certificate for a privious CSR
     pub async fn obtain_certificate(&self, url: impl AsRef<str>) -> Result<String, AcmeError> {
