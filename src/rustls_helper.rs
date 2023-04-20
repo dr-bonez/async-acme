@@ -22,7 +22,7 @@ async fn get_new_cert(){
 */
 
 use futures_util::future::try_join_all;
-use rustls::sign::CertifiedKey;
+use rustls::{sign::CertifiedKey, Certificate};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -58,6 +58,30 @@ where
     let directory = Directory::discover(directory_url).await?;
     let account = Account::load_or_create(directory, cache, contact).await?;
 
+    if let Some(dir) = cache {
+        if let Some((key_pem, cert_pem)) = dir
+            .read_certificate(domains, directory_url)
+            .await
+            .map_err(AcmeError::cache)?
+        {
+            let c = CertifiedKey::new(
+                pem::parse_many(&cert_pem)
+                    .map_err(AcmeError::cache)?
+                    .into_iter()
+                    .map(|pem| Certificate(pem.into_contents()))
+                    .collect(),
+                rustls::sign::any_supported_type(&rustls::PrivateKey(
+                    pem::parse(&key_pem)
+                        .map_err(AcmeError::cache)?
+                        .into_contents(),
+                ))
+                .map_err(AcmeError::cache)?,
+            );
+            if duration_until_renewal_attempt(Some(&c), 0) > Duration::ZERO {
+                return Ok(c);
+            }
+        }
+    }
     let (c, key_pem, cert_pem) = drive_order(set_auth_key, domains.to_vec(), account).await?;
 
     if let Some(dir) = cache {
@@ -65,6 +89,7 @@ where
             .await
             .map_err(AcmeError::cache)?;
     };
+
     Ok(c)
 }
 

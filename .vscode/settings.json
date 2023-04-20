@@ -1,0 +1,3 @@
+{
+    "rust-analyzer.cargo.features": ["use_rustls", "use_tokio"]
+}

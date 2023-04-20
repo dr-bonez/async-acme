@@ -5,14 +5,24 @@ allows the use of a local directory as cache.
 Note that the files contain private keys.
 */
 
-use std::{io::{Error as IoError, ErrorKind}, path::Path};
+use std::{
+    io::{Error as IoError, ErrorKind},
+    path::Path,
+};
 
 use async_trait::async_trait;
 
 #[cfg(feature = "use_async_std")]
-use async_std::{fs::{create_dir_all as cdall, read, OpenOptions}, os::unix::fs::OpenOptionsExt, io::WriteExt};
+use async_std::{
+    fs::{create_dir_all as cdall, read, OpenOptions},
+    io::WriteExt,
+    os::unix::fs::OpenOptionsExt,
+};
 #[cfg(feature = "use_tokio")]
-use tokio::{fs::{create_dir_all, read, OpenOptions}, io::AsyncWriteExt};
+use tokio::{
+    fs::{create_dir_all, read, OpenOptions},
+    io::AsyncWriteExt,
+};
 
 use crate::crypto::sha256_hasher;
 
@@ -34,6 +44,12 @@ pub trait AcmeCache {
     ///
     /// Returns an error when `data` was unable to be written successfully.
     async fn write_account(&self, contacts: &[&str], data: &[u8]) -> Result<(), Self::Error>;
+
+    async fn read_certificate(
+        &self,
+        domains: &[String],
+        directory_url: &str,
+    ) -> Result<Option<(String, String)>, Self::Error>;
 
     /// Writes a certificate retrieved from `Acme`. The parameters are:
     ///
@@ -85,6 +101,49 @@ where
         Ok(write(path, contents).await?)
     }
 
+    async fn read_certificate(
+        &self,
+        domains: &[String],
+        directory_url: &str,
+    ) -> Result<Option<(String, String)>, Self::Error> {
+        let hash = {
+            let mut ctx = sha256_hasher();
+            for domain in domains {
+                ctx.update(domain.as_ref());
+                ctx.update(&[0])
+            }
+            // cache is specific to a particular ACME API URL
+            ctx.update(directory_url.as_bytes());
+            base64::encode_config(ctx.finish(), base64::URL_SAFE_NO_PAD)
+        };
+        let file = AsRef::<Path>::as_ref(self).join(&format!("cached_cert_{}", hash));
+        match read(file).await {
+            Ok(content) => {
+                let mut key_pem = String::new();
+                let mut cert_pem = String::new();
+                for pem in pem::parse_many(content)
+                    .map_err(|e| IoError::new(std::io::ErrorKind::InvalidData, e))?
+                {
+                    if pem.tag().ends_with("PRIVATE KEY") {
+                        key_pem.push_str(&pem::encode(&pem));
+                    } else if pem.tag() == "CERTIFICATE" {
+                        cert_pem.push_str(&pem::encode(&pem));
+                    }
+                }
+
+                if key_pem.is_empty() || cert_pem.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some((key_pem, cert_pem)))
+                }
+            }
+            Err(err) => match err.kind() {
+                ErrorKind::NotFound => Ok(None),
+                _ => Err(err),
+            },
+        }
+    }
+
     async fn write_certificate(
         &self,
         domains: &[String],
@@ -123,15 +182,24 @@ async fn create_dir_all(a: impl AsRef<Path>) -> Result<(), IoError> {
 
 #[cfg(not(any(feature = "use_tokio", feature = "use_async_std")))]
 async fn create_dir_all(_a: impl AsRef<Path>) -> Result<(), IoError> {
-    Err(IoError::new(ErrorKind::NotFound, "no async backend selected"))
+    Err(IoError::new(
+        ErrorKind::NotFound,
+        "no async backend selected",
+    ))
 }
 #[cfg(not(any(feature = "use_tokio", feature = "use_async_std")))]
 async fn read(_a: impl AsRef<Path>) -> Result<Vec<u8>, IoError> {
-    Err(IoError::new(ErrorKind::NotFound, "no async backend selected"))
+    Err(IoError::new(
+        ErrorKind::NotFound,
+        "no async backend selected",
+    ))
 }
 #[cfg(not(any(feature = "use_tokio", feature = "use_async_std")))]
 async fn write(_a: impl AsRef<Path>, _c: impl AsRef<[u8]>) -> Result<(), IoError> {
-    Err(IoError::new(ErrorKind::NotFound, "no async backend selected"))
+    Err(IoError::new(
+        ErrorKind::NotFound,
+        "no async backend selected",
+    ))
 }
 #[cfg(any(feature = "use_tokio", feature = "use_async_std"))]
 async fn write(file_path: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<(), IoError> {
