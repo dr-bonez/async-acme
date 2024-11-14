@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use base64::URL_SAFE_NO_PAD;
-
 use serde_json::json;
 
 use crate::{

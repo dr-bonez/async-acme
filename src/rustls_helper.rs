@@ -22,7 +22,10 @@ async fn get_new_cert(){
 */
 
 use futures_util::future::try_join_all;
-use rustls::{sign::CertifiedKey, Certificate};
+use rustls::{
+    pki_types::{CertificateDer, PrivatePkcs8KeyDer},
+    sign::CertifiedKey,
+};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -65,13 +68,15 @@ where
                 pem::parse_many(&cert_pem)
                     .map_err(AcmeError::cache)?
                     .into_iter()
-                    .map(|pem| Certificate(pem.into_contents()))
+                    .map(|pem| CertificateDer::from(pem.into_contents()))
                     .collect(),
-                rustls::sign::any_supported_type(&rustls::PrivateKey(
-                    pem::parse(&key_pem)
-                        .map_err(AcmeError::cache)?
-                        .into_contents(),
-                ))
+                rustls::crypto::ring::sign::any_supported_type(
+                    &rustls::pki_types::PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+                        pem::parse(&key_pem)
+                            .map_err(AcmeError::cache)?
+                            .into_contents(),
+                    )),
+                )
                 .map_err(AcmeError::cache)?,
             );
             if duration_until_renewal_attempt(Some(&c), 0) > Duration::ZERO {

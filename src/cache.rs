@@ -13,10 +13,6 @@ use std::{
 use crate::B64_URL_SAFE_NO_PAD;
 use async_trait::async_trait;
 use base64::Engine;
-use std::{
-    io::{Error as IoError, ErrorKind},
-    path::Path,
-};
 
 #[cfg(feature = "use_async_std")]
 use async_std::{
@@ -120,7 +116,7 @@ where
             }
             // cache is specific to a particular ACME API URL
             ctx.update(directory_url.as_bytes());
-            base64::encode_config(ctx.finish(), base64::URL_SAFE_NO_PAD)
+            B64_URL_SAFE_NO_PAD.encode(ctx.finish())
         };
         let file = AsRef::<Path>::as_ref(self).join(&format!("cached_cert_{}", hash));
         match read(file).await {
