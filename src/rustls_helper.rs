@@ -23,7 +23,7 @@ async fn get_new_cert(){
 
 use futures_util::future::try_join_all;
 use rustls::{
-    pki_types::{CertificateDer, PrivatePkcs8KeyDer},
+    pki_types::{pem::PemObject, CertificateDer},
     sign::CertifiedKey,
 };
 use std::time::Duration;
@@ -65,17 +65,12 @@ where
             .map_err(AcmeError::cache)?
         {
             let c = CertifiedKey::new(
-                pem::parse_many(&cert_pem)
-                    .map_err(AcmeError::cache)?
-                    .into_iter()
-                    .map(|pem| CertificateDer::from(pem.into_contents()))
-                    .collect(),
+                CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+                    .collect::<Result<_, _>>()
+                    .map_err(AcmeError::cache)?,
                 rustls::crypto::ring::sign::any_supported_type(
-                    &rustls::pki_types::PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
-                        pem::parse(&key_pem)
-                            .map_err(AcmeError::cache)?
-                            .into_contents(),
-                    )),
+                    &rustls::pki_types::PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+                        .map_err(AcmeError::cache)?,
                 )
                 .map_err(AcmeError::cache)?,
             );
