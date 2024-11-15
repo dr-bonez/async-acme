@@ -30,7 +30,7 @@ impl EcdsaP256SHA256KeyPair {
     pub fn generate() -> Result<impl AsRef<[u8]>, ()> {
         let alg = &ECDSA_P256_SHA256_FIXED_SIGNING;
         let rng = SystemRandom::new();
-        EcdsaKeyPair::generate_pkcs8(alg, &rng).map_err(|e| eprintln!("{e}"))
+        EcdsaKeyPair::generate_pkcs8(alg, &rng).map_err(|_| ())
     }
     pub fn sign(&self, message: &[u8]) -> Result<impl AsRef<[u8]>, Unspecified> {
         self.0.sign(&SystemRandom::new(), message)
