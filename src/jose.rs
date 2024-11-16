@@ -47,6 +47,7 @@ pub async fn jose_req(
         } else {
             log::error!("{}: HTTP {}", url, response.status_code());
         }
+        dbg!(response.text().await?);
         return Err(AcmeError::HttpStatus(response.status_code()));
     }
     Ok(response)
