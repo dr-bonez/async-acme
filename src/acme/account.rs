@@ -131,7 +131,7 @@ impl Account {
     pub async fn check_auth(&self, url: impl AsRef<str>) -> Result<Auth, AcmeError> {
         let payload = "".to_string();
         let mut response = self.request(url, &payload).await?;
-        Ok(response.json().await?)
+        Ok(serde_json::from_str(dbg!(&response.text().await?))?)
     }
     /// trigger a particular challange
     pub async fn trigger_challenge(&self, url: impl AsRef<str>) -> Result<(), AcmeError> {
