@@ -124,14 +124,14 @@ impl Account {
         let domains: Vec<Identifier> = domains.into_iter().map(Identifier::Dns).collect();
         let payload = format!("{{\"identifiers\":{}}}", serde_json::to_string(&domains)?);
         let mut response = self.request(&self.directory.new_order, &payload).await?;
-        let order = serde_json::from_str(dbg!(&response.text().await?))?;
+        let order = serde_json::from_str(&response.text().await?)?;
         Ok(order)
     }
     /// check the authentication status for a particular challange
     pub async fn check_auth(&self, url: impl AsRef<str>) -> Result<Auth, AcmeError> {
         let payload = "".to_string();
         let mut response = self.request(url, &payload).await?;
-        Ok(serde_json::from_str(dbg!(&response.text().await?))?)
+        Ok(serde_json::from_str(&response.text().await?)?)
     }
     /// trigger a particular challange
     pub async fn trigger_challenge(&self, url: impl AsRef<str>) -> Result<(), AcmeError> {
@@ -144,7 +144,7 @@ impl Account {
             let mut response: Response = self
                 .request(&url.as_ref().replace("/finalize/", "/order/"), "")
                 .await?;
-            let order = serde_json::from_str(dbg!(&response.text().await?))?;
+            let order = serde_json::from_str(&response.text().await?)?;
             if matches!(order, Order::Processing { .. }) {
                 continue;
             }

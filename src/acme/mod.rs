@@ -3,6 +3,7 @@
 */
 use generic_async_http_client::{Error as HTTPError, Request, Response};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::convert::TryInto;
 use thiserror::Error;
 
@@ -95,7 +96,10 @@ pub enum Auth {
     },
     /// ownership is proven
     Valid,
-    Invalid,
+    Invalid {
+        #[serde(default)]
+        error: Value,
+    },
     Revoked,
     Expired,
 }
