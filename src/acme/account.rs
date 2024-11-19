@@ -144,7 +144,7 @@ impl Account {
             let mut response: Response = self
                 .request(&url.as_ref().replace("/finalize/", "/order/"), "")
                 .await?;
-            let order = serde_json::from_str(&response.text().await?)?;
+            let order = serde_json::from_str(dbg!(&response.text().await?))?;
             if matches!(order, Order::Processing { .. }) {
                 continue;
             }
