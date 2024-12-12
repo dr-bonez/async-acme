@@ -120,9 +120,11 @@ impl Account {
         Ok(res)
     }
     /// send a new order for the DNS identifiers in domains
-    pub async fn new_order(&self, domains: Vec<String>) -> Result<Order, AcmeError> {
-        let domains: Vec<Identifier> = domains.into_iter().map(Identifier::Dns).collect();
-        let payload = format!("{{\"identifiers\":{}}}", serde_json::to_string(&domains)?);
+    pub async fn new_order(&self, identifiers: Vec<Identifier>) -> Result<Order, AcmeError> {
+        let payload = format!(
+            "{{\"identifiers\":{}}}",
+            serde_json::to_string(&identifiers)?
+        );
         let mut response = self.request(&self.directory.new_order, &payload).await?;
         let order = serde_json::from_str(&response.text().await?)?;
         Ok(order)
@@ -324,7 +326,9 @@ mod test {
             let t = spawn(server(listener));
 
             let account = new_account(directory);
-            let o = account.new_order(vec!["example.com".to_string()]).await?;
+            let o = account
+                .new_order(vec![Identifier::Dns("example.com".into())])
+                .await?;
 
             let (a, f) = match o {
                 Order::Pending {

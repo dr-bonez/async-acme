@@ -7,10 +7,11 @@ Note that the files contain private keys.
 
 use std::{
     io::{Error as IoError, ErrorKind},
+    net::IpAddr,
     path::Path,
 };
 
-use crate::B64_URL_SAFE_NO_PAD;
+use crate::{acme::Identifier, B64_URL_SAFE_NO_PAD};
 use async_trait::async_trait;
 use base64::Engine;
 
@@ -49,7 +50,7 @@ pub trait AcmeCache {
 
     async fn read_certificate(
         &self,
-        domains: &[String],
+        identifiers: &[Identifier],
         directory_url: &str,
     ) -> Result<Option<(String, String)>, Self::Error>;
 
@@ -57,7 +58,7 @@ pub trait AcmeCache {
     ///
     /// ## Parameters
     ///
-    /// * `domains`: the list of domains included in the certificate.
+    /// * `identifiers`: the list of identifiers included in the certificate.
     /// * `directory_url`: the Url of the `Acme` directory that this certificate
     ///   was issued form.
     /// * `key_pem`: the private key, encoded in PEM format.
@@ -69,11 +70,34 @@ pub trait AcmeCache {
     /// sucessfully.
     async fn write_certificate(
         &self,
-        domains: &[String],
+        identifiers: &[Identifier],
         directory_url: &str,
         key_pem: &str,
         certificate_pem: &str,
     ) -> Result<(), Self::Error>;
+}
+
+fn hash_idents(identifiers: &[Identifier], directory_url: &str) -> String {
+    let mut ctx = sha256_hasher();
+    for identifier in identifiers {
+        match identifier {
+            Identifier::Dns(d) => {
+                ctx.update(b"dns\0");
+                ctx.update(d.as_ref());
+            }
+            Identifier::Ip(ip) => {
+                ctx.update(b"ip\0");
+                match ip {
+                    IpAddr::V4(ip) => ctx.update(&ip.octets()),
+                    IpAddr::V6(ip) => ctx.update(&ip.octets()),
+                }
+            }
+        }
+        ctx.update(&[0])
+    }
+    // cache is specific to a particular ACME API URL
+    ctx.update(directory_url.as_bytes());
+    B64_URL_SAFE_NO_PAD.encode(ctx.finish())
 }
 
 #[async_trait]
@@ -105,19 +129,10 @@ where
 
     async fn read_certificate(
         &self,
-        domains: &[String],
+        identifiers: &[Identifier],
         directory_url: &str,
     ) -> Result<Option<(String, String)>, Self::Error> {
-        let hash = {
-            let mut ctx = sha256_hasher();
-            for domain in domains {
-                ctx.update(domain.as_ref());
-                ctx.update(&[0])
-            }
-            // cache is specific to a particular ACME API URL
-            ctx.update(directory_url.as_bytes());
-            B64_URL_SAFE_NO_PAD.encode(ctx.finish())
-        };
+        let hash = hash_idents(identifiers, directory_url);
         let file = AsRef::<Path>::as_ref(self).join(&format!("cached_cert_{}", hash));
         match read(file).await {
             Ok(content) => {
@@ -148,21 +163,12 @@ where
 
     async fn write_certificate(
         &self,
-        domains: &[String],
+        identifiers: &[Identifier],
         directory_url: &str,
         key_pem: &str,
         certificate_pem: &str,
     ) -> Result<(), Self::Error> {
-        let hash = {
-            let mut ctx = sha256_hasher();
-            for domain in domains {
-                ctx.update(domain.as_ref());
-                ctx.update(&[0])
-            }
-            // cache is specific to a particular ACME API URL
-            ctx.update(directory_url.as_bytes());
-            B64_URL_SAFE_NO_PAD.encode(ctx.finish())
-        };
+        let hash = hash_idents(identifiers, directory_url);
         let file = AsRef::<Path>::as_ref(self).join(&format!("cached_cert_{}", hash));
         let content = format!("{}\n{}", key_pem, certificate_pem);
         write(&file, &content).await?;

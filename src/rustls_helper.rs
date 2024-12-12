@@ -50,17 +50,17 @@ use tokio::time::sleep;
 pub async fn order<C, F>(
     set_auth_key: F,
     directory_url: &str,
-    domains: &[String],
+    identifiers: &[Identifier],
     cache: Option<&C>,
     contact: &[String],
 ) -> Result<CertifiedKey, OrderError>
 where
     C: AcmeCache,
-    F: Fn(String, CertifiedKey) -> Result<(), AcmeError>,
+    F: Fn(Identifier, CertifiedKey) -> Result<(), AcmeError>,
 {
     if let Some(dir) = cache {
         if let Some((key_pem, cert_pem)) = dir
-            .read_certificate(domains, directory_url)
+            .read_certificate(identifiers, directory_url)
             .await
             .map_err(AcmeError::cache)?
         {
@@ -84,10 +84,10 @@ where
     let directory = Directory::discover(directory_url).await?;
     let account = Account::load_or_create(directory, cache, contact).await?;
 
-    let (c, key_pem, cert_pem) = drive_order(set_auth_key, domains.to_vec(), account).await?;
+    let (c, key_pem, cert_pem) = drive_order(set_auth_key, identifiers.to_vec(), account).await?;
 
     if let Some(dir) = cache {
-        dir.write_certificate(domains, directory_url, &key_pem, &cert_pem)
+        dir.write_certificate(identifiers, directory_url, &key_pem, &cert_pem)
             .await
             .map_err(AcmeError::cache)?;
     };
@@ -103,14 +103,14 @@ where
 /// Returns the signed Certificate, its private key as pem, and the certificate as pem again
 pub async fn drive_order<F>(
     set_auth_key: F,
-    domains: Vec<String>,
+    identifiers: Vec<Identifier>,
     account: Account,
 ) -> Result<(CertifiedKey, String, String), OrderError>
 where
-    F: Fn(String, CertifiedKey) -> Result<(), AcmeError>,
+    F: Fn(Identifier, CertifiedKey) -> Result<(), AcmeError>,
 {
-    let cert = CertBuilder::gen_new(domains.clone())?;
-    let mut order = account.new_order(domains).await?;
+    let cert = CertBuilder::gen_new(identifiers.clone())?;
+    let mut order = account.new_order(identifiers).await?;
     loop {
         order = match order {
             Order::Pending {
@@ -149,20 +149,19 @@ where
 }
 async fn authorize<F>(set_auth_key: &F, account: &Account, url: &str) -> Result<(), OrderError>
 where
-    F: Fn(String, CertifiedKey) -> Result<(), AcmeError>,
+    F: Fn(Identifier, CertifiedKey) -> Result<(), AcmeError>,
 {
-    let (domain, challenge_url) = match account.check_auth(url).await? {
+    let (identifier, challenge_url) = match account.check_auth(url).await? {
         Auth::Pending {
             identifier,
             challenges,
         } => {
-            let Identifier::Dns(domain) = identifier;
-            log::info!("trigger challenge for {}", &domain);
+            log::info!("trigger challenge for {identifier:?}");
             let (challenge, key_auth) = account.tls_alpn_01(&challenges)?;
-            let auth_key = gen_acme_cert(vec![domain.clone()], key_auth.as_ref())?;
-            set_auth_key(domain.clone(), auth_key)?;
+            let auth_key = gen_acme_cert(vec![identifier.clone()], key_auth.as_ref())?;
+            set_auth_key(identifier.clone(), auth_key)?;
             account.trigger_challenge(&challenge.url).await?;
-            (domain, challenge.url.clone())
+            (identifier, challenge.url.clone())
         }
         Auth::Valid => return Ok(()),
         auth => return Err(OrderError::BadAuth(auth)),
@@ -171,14 +170,14 @@ where
         sleep(Duration::from_secs(1u64 << i)).await;
         match account.check_auth(url).await? {
             Auth::Pending { .. } => {
-                log::info!("authorization for {} still pending", &domain);
+                log::info!("authorization for {identifier:?} still pending");
                 account.trigger_challenge(&challenge_url).await?
             }
             Auth::Valid => return Ok(()),
             auth => return Err(OrderError::BadAuth(auth)),
         }
     }
-    Err(OrderError::TooManyAttemptsAuth(domain))
+    Err(OrderError::TooManyAttemptsAuth(identifier))
 }
 
 /// get the duration until the next ACME refresh should be done
@@ -206,6 +205,6 @@ pub enum OrderError {
     BadOrder(Order),
     #[error("bad auth object: {0:?}")]
     BadAuth(Auth),
-    #[error("authorization for {0} failed too many times")]
-    TooManyAttemptsAuth(String),
+    #[error("authorization for {0:?} failed too many times")]
+    TooManyAttemptsAuth(Identifier),
 }

@@ -17,6 +17,8 @@ use rustls::{
 
 use std::sync::Arc;
 
+use crate::acme::Identifier;
+
 #[derive(Debug)]
 pub struct EcdsaP256SHA256KeyPair(EcdsaKeyPair);
 
@@ -46,8 +48,19 @@ pub fn sha256_hasher() -> Context {
 pub fn sha256(data: &[u8]) -> impl AsRef<[u8]> {
     digest(&DoSHA256, data)
 }
-pub fn gen_acme_cert(domains: Vec<String>, acme_hash: &[u8]) -> Result<CertifiedKey, RcgenError> {
-    let mut params = CertificateParams::new(domains);
+pub fn gen_acme_cert(
+    identifiers: impl IntoIterator<Item = Identifier>,
+    acme_hash: &[u8],
+) -> Result<CertifiedKey, RcgenError> {
+    let mut params = CertificateParams::new(
+        identifiers
+            .into_iter()
+            .map(|s| match s {
+                Identifier::Dns(d) => d,
+                Identifier::Ip(ip) => ip.to_string(),
+            })
+            .collect::<Vec<_>>(),
+    );
     params.alg = &PKCS_ECDSA_P256_SHA256;
     params.custom_extensions = vec![CustomExtension::new_acme_identifier(acme_hash)];
     let cert = Certificate::from_params(params)?;
@@ -63,8 +76,16 @@ pub struct CertBuilder {
     pk: Arc<dyn SigningKey>,
 }
 impl CertBuilder {
-    pub fn gen_new(domains: Vec<String>) -> Result<CertBuilder, RcgenError> {
-        let mut params = CertificateParams::new(domains);
+    pub fn gen_new(identifiers: Vec<Identifier>) -> Result<CertBuilder, RcgenError> {
+        let mut params = CertificateParams::new(
+            identifiers
+                .into_iter()
+                .map(|s| match s {
+                    Identifier::Dns(d) => d,
+                    Identifier::Ip(ip) => ip.to_string(),
+                })
+                .collect::<Vec<_>>(),
+        );
         params.distinguished_name = DistinguishedName::new();
         params.alg = &PKCS_ECDSA_P256_SHA256;
         let cert = Certificate::from_params(params)?;

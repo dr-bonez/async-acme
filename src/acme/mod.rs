@@ -5,6 +5,7 @@ use generic_async_http_client::{Error as HTTPError, Request, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::convert::TryInto;
+use std::net::IpAddr;
 use thiserror::Error;
 
 mod account;
@@ -108,6 +109,7 @@ pub enum Auth {
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Identifier {
     Dns(String),
+    Ip(IpAddr),
 }
 
 #[derive(Debug, Deserialize)]
