@@ -105,11 +105,19 @@ pub enum Auth {
     Expired,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
 pub enum Identifier {
     Dns(String),
     Ip(IpAddr),
+}
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dns(a) => a.fmt(f),
+            Self::Ip(a) => a.fmt(f),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
